@@ -32,6 +32,9 @@ export class TuyaPlatform implements DynamicPlatformPlugin {
   public deviceManager?: TuyaDeviceManager;
   public accessoryHandlers: BaseAccessory[] = [];
 
+  public thSensor?: BaseAccessory;
+  public acHandlersUsingTHSensor: BaseAccessory[] = [];
+
   validate() {
     let result;
     if (!this.options) {

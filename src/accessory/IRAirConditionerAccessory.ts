@@ -21,6 +21,7 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
     this.configureAirConditioner();
     this.configureDehumidifier();
     this.configureFan();
+    this.platform.acHandlersUsingTHSensor.push(this);
   }
 
   configureAirConditioner() {
@@ -34,11 +35,14 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
         return ([AC_MODE_COOL, AC_MODE_HEAT, AC_MODE_AUTO].includes(this.getMode()) && this.getPower() === POWER_ON) ? ACTIVE : INACTIVE;
       })
       .onSet(async value => {
+        this.log.info('Set ative ->', value);
         if (value === ACTIVE) {
           // Turn off Dehumidifier & Fan
           this.supportDehumidifier() && this.dehumidifierService().getCharacteristic(this.Characteristic.Active).updateValue(INACTIVE);
           this.supportFan() && this.fanService().getCharacteristic(this.Characteristic.Active).updateValue(INACTIVE);
-          this.fanService().getCharacteristic(this.Characteristic.Active).value = INACTIVE;
+          //this.fanService().getCharacteristic(this.Characteristic.Active).value = INACTIVE;
+          //this.platform.getAccessoryHandler(this.device.id + '-dh')?.accessory.getService(this.Service.HumidifierDehumidifier)
+          //  ?.getCharacteristic(this.Characteristic.Active).updateValue(INACTIVE);
         }
 
         if (value === ACTIVE && ![AC_MODE_COOL, AC_MODE_HEAT, AC_MODE_AUTO].includes(this.getMode())) {
@@ -55,6 +59,7 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
 
     // Optional Characteristics
     this.configureRotationSpeed(service);
+    //this.configureTargetFanState(service);
 
     const key_range = this.device.remote_keys?.key_range || [];
     if (key_range.find(item => item.mode === AC_MODE_HEAT)) {
@@ -67,8 +72,13 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
           return this.getTemp();
         })
         .onSet(async value => {
+          this.log.info('Temperatura actual:', this.mainService().getCharacteristic(this.Characteristic.CurrentTemperature).value);
           if (this.getMode() === AC_MODE_AUTO) {
             return;
+          }
+          const temp = this.mainService().getCharacteristic(this.Characteristic.CurrentTemperature).value as number;
+          if (Math.round(temp) - 1 > (value as number)) {
+            this.setMode(AC_MODE_COOL);
           }
           this.setTemp(value);
         })
@@ -78,7 +88,13 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
       const [minValue, maxValue] = this.getTempRange(AC_MODE_COOL)!;
       service.getCharacteristic(this.Characteristic.CoolingThresholdTemperature)
         .onGet(this.getTemp.bind(this))
-        .onSet(this.setTemp.bind(this))
+        .onSet(async value => {
+          const temp = this.mainService().getCharacteristic(this.Characteristic.CurrentTemperature).value as number;
+          if (Math.round(temp) + 1 < (value as number)) {
+            this.setMode(AC_MODE_HEAT);
+          }
+          this.setTemp(value);
+        })
         .setProps({ minValue, maxValue, minStep: 1 });
     }
   }
@@ -103,7 +119,9 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
           this.supportFan() && this.fanService().getCharacteristic(this.Characteristic.Active).updateValue(INACTIVE);
         }
 
-        this.setMode(AC_MODE_DEHUMIDIFIER);
+        if (value === ACTIVE && this.getMode() !== AC_MODE_DEHUMIDIFIER) {
+          this.setMode(AC_MODE_DEHUMIDIFIER);
+        }
         this.setPower((value === ACTIVE) ? POWER_ON : POWER_OFF);
       });
 
@@ -117,7 +135,7 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
 
     service.getCharacteristic(this.Characteristic.CurrentRelativeHumidity)
       .onGet(() => {
-        const handler = this.getParentAccessory().accessory
+        const handler = this.platform.thSensor!.accessory
           .getService(this.Service.HumiditySensor)
           ?.getCharacteristic(this.Characteristic.CurrentRelativeHumidity)['getHandler'];
         const humidity = handler ? handler() : 0;
@@ -146,6 +164,8 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
           // Turn off AC & Dehumidifier
           this.mainService().getCharacteristic(this.Characteristic.Active).updateValue(INACTIVE);
           this.supportDehumidifier() && this.dehumidifierService().getCharacteristic(this.Characteristic.Active).updateValue(INACTIVE);
+          //this.platform.getAccessoryHandler(this.device.id + '-dh')?.accessory.getService(this.Service.HumidifierDehumidifier)
+          //  ?.getCharacteristic(this.Characteristic.Active).updateValue(INACTIVE);
         }
 
         this.setMode(AC_MODE_FAN);
@@ -178,8 +198,10 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
   }
 
   setPower(value) {
-    this.getStatus('power')!.value = value;
-    this.debounceSendACCommands();
+    if (this.getPower() !== value) {
+      this.getStatus('power')!.value = value;
+      this.debounceSendACCommands();
+    }
   }
 
   getMode() {
@@ -188,8 +210,10 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
   }
 
   setMode(value) {
-    this.getStatus('mode')!.value = value;
-    this.debounceSendACCommands();
+    if (this.getMode() !== value) {
+      this.getStatus('mode')!.value = value;
+      this.debounceSendACCommands();
+    }
   }
 
   getWind() {
@@ -198,8 +222,11 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
   }
 
   setWind(value) {
-    this.getStatus('wind')!.value = value;
-    this.debounceSendACCommands();
+    this.log.info('Set wind ->', value);
+    if (this.getWind() !== value) {
+      this.getStatus('wind')!.value = value;
+      this.debounceSendACCommands();
+    }
   }
 
   getTemp() {
@@ -208,8 +235,10 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
   }
 
   setTemp(value) {
-    this.getStatus('temp')!.value = value;
-    this.debounceSendACCommands();
+    if (this.getTemp() !== value) {
+      this.getStatus('temp')!.value = value;
+      this.debounceSendACCommands();
+    }
   }
 
   getKeyRangeItem(mode: number) {
@@ -222,7 +251,7 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
   }
 
   supportFan() {
-    return this.getKeyRangeItem(AC_MODE_FAN) !== undefined;
+    return false; //this.getKeyRangeItem(AC_MODE_FAN) !== undefined;
   }
 
   getTempRange(mode: number) {
@@ -269,6 +298,8 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
         [AC_MODE_AUTO.toString()]: AUTO,
       }[this.getMode().toString()] || AUTO))
       .onSet(async value => {
+        this.log.info('Set State ->', value);
+        this.setPower(POWER_ON);
         this.setMode({
           [COOL.toString()]: AC_MODE_COOL,
           [HEAT.toString()]: AC_MODE_HEAT,
@@ -281,7 +312,7 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
   configureCurrentTemperature() {
     this.mainService().getCharacteristic(this.Characteristic.CurrentTemperature)
       .onGet(() => {
-        const handler = this.getParentAccessory().accessory
+        const handler = this.platform.thSensor!.accessory
           .getService(this.Service.TemperatureSensor)
           ?.getCharacteristic(this.Characteristic.CurrentTemperature)['getHandler'];
         const temp = handler ? handler() : this.getTemp();
@@ -300,19 +331,19 @@ export default class IRAirConditionerAccessory extends BaseAccessory {
 
   configureRotationSpeed(service) {
     service.getCharacteristic(this.Characteristic.RotationSpeed)
-      .onGet(() => (this.getWind() === FAN_SPEED_AUTO) ? FAN_SPEED_HIGH : this.getWind())
+      .onGet(() => (this.getWind() === FAN_SPEED_AUTO) ? FAN_SPEED_AUTO : this.getWind())
       .onSet(async value => {
         // if (this.getWind() === FAN_SPEED_AUTO) {
         //   return;
         // }
-        if (value !== 0) {
-          this.setWind(value);
-        }
+        //if (value !== 0) {
+        this.setWind(value);
+        //}
       })
       .setProps({ minValue: 0, maxValue: 3, minStep: 1, unit: 'speed' });
   }
 
-  debounceSendACCommands = debounce(this.sendACCommands, 100);
+  debounceSendACCommands = debounce(this.sendACCommands, 200);
 
   async sendACCommands() {
     const { parent_id, id } = this.device;

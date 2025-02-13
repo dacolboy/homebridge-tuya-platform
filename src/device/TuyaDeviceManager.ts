@@ -199,6 +199,7 @@ export default class TuyaDeviceManager extends EventEmitter {
 
   async sendInfraredACCommands(infraredID: string, remoteID: string, power: number, mode: number, temp: number, wind: number) {
     const commands = (power === 1) ? { power, mode, temp, wind } : { power };
+    this.log.info('Send AC command msg = %s', JSON.stringify(commands));
     const res = await this.api.post(`/v2.0/infrareds/${infraredID}/air-conditioners/${remoteID}/scenes/command`, commands);
     if (!res.success) {
       this.log.info('Send AC command failed. code = %d, msg = %s', res.code, res.msg);

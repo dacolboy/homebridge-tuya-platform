@@ -284,39 +284,50 @@ export default class TuyaOpenAPI {
     if (params) {
       path += '?' + new URLSearchParams(params).toString();
     }
+    let res: TuyaOpenAPIResponse;
+    try {
+      res = await retry(async () => new Promise((resolve, reject) => {
 
-    const res: TuyaOpenAPIResponse = await retry(async () => new Promise((resolve, reject) => {
+        const req = https.request({
+          host: new URL(this.endpoint).host,
+          method,
+          headers,
+          path,
+        }, res => {
+          if (res.statusCode !== 200) {
+            this.log.warn('Status: %d %s', res.statusCode, res.statusMessage);
+            return;
+          }
+          res.setEncoding('utf8');
+          let rawData = '';
+          res.on('data', (chunk) => {
+            rawData += chunk;
+          });
+          res.on('end', () => {
+            resolve(JSON.parse(rawData));
+          });
+        });
 
-      const req = https.request({
-        host: new URL(this.endpoint).host,
-        method,
-        headers,
-        path,
-      }, res => {
-        if (res.statusCode !== 200) {
-          this.log.warn('Status: %d %s', res.statusCode, res.statusMessage);
-          return;
+        if (body) {
+          req.write(JSON.stringify(body));
         }
-        res.setEncoding('utf8');
-        let rawData = '';
-        res.on('data', (chunk) => {
-          rawData += chunk;
-        });
-        res.on('end', () => {
-          resolve(JSON.parse(rawData));
-        });
-      });
 
-      if (body) {
-        req.write(JSON.stringify(body));
-      }
-
-      req.on('error', e => {
-        this.log.error('Network error: %s. Retrying...', e.message);
-        reject(e);
-      });
-      req.end();
-    }), undefined, {retriesMax: 10, interval: 100, exponential: true, factor: 2, jitter: 100});
+        req.on('error', e => {
+          this.log.error('Network error: %s. Retrying...', e.message);
+          reject(e);
+        });
+        req.end();
+      }), undefined, { retriesMax: 10, interval: 100, exponential: true, factor: 2, jitter: 100 });
+    } catch (e: any) {
+      res = {
+        success: false,
+        code: e.code,
+        result: '',
+        msg: e.message,
+        t: 0,
+        tid: '',
+      };
+    }
 
     this.log.debug('Response:\npath = %s\ndata = %s', path, JSON.stringify(res, null, 2));
     if (res && res.success !== true && API_ERROR_MESSAGES[res.code]) {

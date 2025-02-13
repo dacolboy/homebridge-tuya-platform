@@ -44,6 +44,7 @@ import WeatherStationAccessory from './WeatherStationAccessory';
 import DoorbellAccessory from './DoorbellAccessory';
 import PetFeederAccessory from './PetFeederAccessory';
 import WhiteNoiseLightAccessory from './WhiteNoiseLightAccessory';
+import IRDehumidifierAccessory from './IRDehumidifierAccessory';
 
 
 export default class AccessoryFactory {
@@ -222,6 +223,9 @@ export default class AccessoryFactory {
       switch (device.remote_keys?.category_id) {
         case 5: // AC
           handler = new IRAirConditionerAccessory(platform, accessory);
+          break;
+        case 69: // Deshumidificador del AC
+          handler = new IRDehumidifierAccessory(platform, accessory);
           break;
         default:
           handler = new IRGenericAccessory(platform, accessory);
